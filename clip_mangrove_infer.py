@@ -4,7 +4,7 @@ from PIL import Image
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model_name = "openai/clip-vit-base-patch32"
+model_name = "openai/clip-vit-base-patch16"
 try:
     processor = CLIPProcessor.from_pretrained(model_name)
     model = CLIPModel.from_pretrained(model_name)
