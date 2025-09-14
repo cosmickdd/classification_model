@@ -9,7 +9,7 @@ import io
 app = FastAPI()
 
 # Choose lighter model (optimized for mobile/low memory)
-model_name = "apple/mobileclip-vit-b32"
+model_name = "openai/clip-vit-base-patch16"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Lazy loading
