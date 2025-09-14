@@ -1,11 +1,11 @@
-clip_patch_heatmap.py
+ 
 import torch, numpy as np, cv2
 from transformers import CLIPProcessor, CLIPModel
 from PIL import Image
 import matplotlib.pyplot as plt
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model_name = "apple/mobileclip-vit-b32"
+model_name = "openai/clip-vit-base-patch16"
 
 # Lazy load globals
 model = None
