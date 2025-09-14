@@ -1,4 +1,3 @@
-app.py
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
 from PIL import Image
