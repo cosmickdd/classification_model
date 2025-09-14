@@ -1,17 +1,28 @@
+clip_mangroove_infer.py
 import torch
 from transformers import CLIPProcessor, CLIPModel
 from PIL import Image
 
-
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model_name = "openai/clip-vit-base-patch16"
-try:
-    processor = CLIPProcessor.from_pretrained(model_name)
-    model = CLIPModel.from_pretrained(model_name)
-    model = model.to(device).eval()
-except Exception as e:
-    print(f"Error loading model or processor: {e}")
-    exit(1)
+model_name = "apple/mobileclip-vit-b32"
+
+# Lazy load globals
+model = None
+processor = None
+
+def load_model():
+    """Load CLIP model only when needed."""
+    global model, processor
+    if model is None or processor is None:
+        try:
+            processor = CLIPProcessor.from_pretrained(model_name)
+            model = CLIPModel.from_pretrained(model_name)
+            if device == "cuda":
+                model = model.half()  # use half precision on GPU
+            model = model.to(device).eval()
+        except Exception as e:
+            print(f"Error loading model or processor: {e}")
+            exit(1)
 
 texts = [
     "a photo of a mangrove forest",
@@ -21,8 +32,10 @@ texts = [
 ]
 
 def predict_image(path, texts=texts, temp=1.0):
+    load_model()
     try:
         image = Image.open(path).convert("RGB")
+        image = image.resize((224, 224))  # shrink for memory safety
     except Exception as e:
         print(f"Error opening image: {e}")
         return None
@@ -42,7 +55,7 @@ def predict_image(path, texts=texts, temp=1.0):
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2:
-        print("Usage: python clip_mangrove_infer.py samples/image.png")
+        print("Usage: python clip_mangroove_infer.py samples/image.png")
     else:
         result = predict_image(sys.argv[1])
         if result is not None:

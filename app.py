@@ -1,3 +1,4 @@
+app.py
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
 from PIL import Image
@@ -8,20 +9,31 @@ import io
 
 app = FastAPI()
 
-# Load model and processor once at startup
+# Choose lighter model (optimized for mobile/low memory)
+model_name = "apple/mobileclip-vit-b32"
 device = "cuda" if torch.cuda.is_available() else "cpu"
-# Use a lighter model (patch16 is smaller than patch32)
-model_name = "openai/clip-vit-base-patch16"
-try:
-    processor = CLIPProcessor.from_pretrained(model_name)
-    model = CLIPModel.from_pretrained(model_name)
-    model = model.to(device).eval()
-except Exception as e:
-    import sys
-    print(f"Error loading model: {e}", file=sys.stderr)
-    processor = None
-    model = None
 
+# Lazy loading
+model = None
+processor = None
+
+def load_model():
+    """Load the model only when first needed."""
+    global model, processor
+    if model is None or processor is None:
+        try:
+            processor = CLIPProcessor.from_pretrained(model_name)
+            model = CLIPModel.from_pretrained(model_name)
+            # Use half precision if GPU available
+            if device == "cuda":
+                model = model.half()
+            model = model.to(device).eval()
+        except Exception as e:
+            import sys
+            print(f"Error loading model: {e}", file=sys.stderr)
+            processor, model = None, None
+
+# Prompts
 texts = [
     "a photo of a mangrove forest",
     "a photo of a coastal area without mangroves",
@@ -30,9 +42,13 @@ texts = [
 ]
 
 def predict_image(image: Image.Image, texts=texts, temp=1.0):
+    load_model()  # Ensure model is loaded
     if processor is None or model is None:
         return {"error": "Model not loaded. Check server logs."}
     try:
+        # Resize image to reduce memory footprint
+        image = image.resize((224, 224))
+
         inputs = processor(text=texts, images=image, return_tensors="pt", padding=True).to(device)
         with torch.no_grad():
             logits = model(**inputs).logits_per_image / temp
