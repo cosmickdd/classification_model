@@ -4,7 +4,7 @@ from transformers import CLIPProcessor, CLIPModel
 from PIL import Image
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model_name = "apple/mobileclip-vit-b32"
+model_name = "openai/clip-vit-base-patch16"
 
 # Lazy load globals
 model = None
