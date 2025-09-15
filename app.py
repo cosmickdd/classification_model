@@ -1,67 +1,49 @@
+
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
 from PIL import Image
 import torch
-from transformers import CLIPProcessor, CLIPModel
-import numpy as np
+import torchvision.transforms as T
+import torchvision.models as models
 import io
 
 app = FastAPI()
 
-# Choose lighter model (optimized for mobile/low memory)
-model_name = "openai/clip-vit-base-patch16"
+# Use MobileNetV2 (pretrained on ImageNet)
 device = "cuda" if torch.cuda.is_available() else "cpu"
+model = models.mobilenet_v2(pretrained=True)
+model = model.to(device).eval()
 
-# Lazy loading
-model = None
-processor = None
+# ImageNet class labels (first 1000)
+import json
+import urllib.request
+LABELS_URL = "https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt"
+with urllib.request.urlopen(LABELS_URL) as f:
+    categories = [line.strip().decode("utf-8") for line in f.readlines()]
 
-def load_model():
-    """Load the model only when first needed."""
-    global model, processor
-    if model is None or processor is None:
-        try:
-            processor = CLIPProcessor.from_pretrained(model_name)
-            model = CLIPModel.from_pretrained(model_name)
-            # Use half precision if GPU available
-            if device == "cuda":
-                model = model.half()
-            model = model.to(device).eval()
-        except Exception as e:
-            import sys
-            print(f"Error loading model: {e}", file=sys.stderr)
-            processor, model = None, None
+transform = T.Compose([
+    T.Resize(256),
+    T.CenterCrop(224),
+    T.ToTensor(),
+    T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
 
-# Prompts
-texts = [
-    "a photo of a mangrove forest",
-    "a photo of a coastal area without mangroves",
-    "a photo of trees but not mangrove",
-    "a close-up of mangrove trees",
-]
-
-def predict_image(image: Image.Image, texts=texts, temp=1.0):
-    load_model()  # Ensure model is loaded
-    if processor is None or model is None:
-        return {"error": "Model not loaded. Check server logs."}
+def predict_image(image: Image.Image):
     try:
-        # Resize image to reduce memory footprint
-        image = image.resize((224, 224))
-
-        inputs = processor(text=texts, images=image, return_tensors="pt", padding=True).to(device)
+        image = transform(image).unsqueeze(0).to(device)
         with torch.no_grad():
-            logits = model(**inputs).logits_per_image / temp
-            probs = logits.softmax(dim=1)[0].cpu().numpy()
-        mangrove_score = float(probs[0] + probs[3])  # combine mangrove prompts
-        best_idx = int(probs.argmax())
+            outputs = model(image)
+            probs = torch.nn.functional.softmax(outputs[0], dim=0)
+            top5_prob, top5_catid = torch.topk(probs, 5)
         return {
-            "best_text": texts[best_idx],
-            "best_prob": float(probs[best_idx]),
-            "mangrove_score": mangrove_score,
-            "all_probs": [float(x) for x in probs],
+            "top5": [
+                {"label": categories[catid], "prob": float(prob)}
+                for prob, catid in zip(top5_prob, top5_catid)
+            ]
         }
     except Exception as e:
         return {"error": f"Prediction failed: {e}"}
+
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
@@ -77,6 +59,7 @@ async def predict(file: UploadFile = File(...)):
         return JSONResponse(status_code=500, content=result)
     return result
 
+
 @app.get("/")
 def root():
-    return {"message": "Mangrove image classification API. POST an image to /predict."}
+    return {"message": "MobileNetV2 ImageNet demo API. POST an image to /predict for top-5 labels."}
